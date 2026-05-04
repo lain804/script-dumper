@@ -1,8 +1,6 @@
 local Logger = loadstring(game:HttpGet("https://raw.githubusercontent.com/lain804/rolog/refs/heads/master/rolog.lua"))()
 
-local DD2 = {
-    scriptPool = {}
-}
+local DD2 = {}
 
 function DD2:IsDecompilationViable(instance:BaseScript)
     return
@@ -32,6 +30,8 @@ function DD2:CollectViableAndUniqueScripts()
 
     local bytecodeCache = {}
 
+    local scriptPool = {}
+
     for _,f in scriptCollectionFunctions do
         if not f then
             continue
@@ -39,7 +39,7 @@ function DD2:CollectViableAndUniqueScripts()
 
         for _,v in f() or {} do
 
-            if table.find(self.scriptPool,v) or not DD2:IsDecompilationViable(v) then
+            if table.find(scriptPool,v) or not DD2:IsDecompilationViable(v) then
                 continue
             end
 
@@ -50,9 +50,10 @@ function DD2:CollectViableAndUniqueScripts()
             end
 
             table.insert(bytecodeCache,bytecode)
-            table.insert(self.scriptPool,v)
+            table.insert(scriptPool,v)
         end
     end
+    return scriptPool
 end
 
 local MAX_FILENAME_LENGTH = 255
@@ -208,9 +209,7 @@ function DD2.GetDirectoryForScript(instance)
     end
 end
 
-DD2:CollectViableAndUniqueScripts()
-
-for _,v in DD2.scriptPool do
+for _,v in DD2:CollectViableAndUniqueScripts() do
     local scriptFileName = DD2.GetValidFileNameOrFallback(v.Name)
     local gameScriptPath = v:GetFullName() or "Invalid Script Path"
     local note = ("--[[ %* ]]--\n"):format(gameScriptPath)
