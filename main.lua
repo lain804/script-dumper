@@ -1,3 +1,7 @@
+while not game:IsLoaded() do
+    task.wait()
+end
+
 local Logger = loadstring(game:HttpGet("https://raw.githubusercontent.com/lain804/rolog/refs/heads/master/rolog.lua"))()
 
 local DD2 = {}
@@ -208,6 +212,14 @@ function DD2.GetDirectoryForScript(instance)
         return defaultDir
     end
 end
+
+local function antiAFK()
+    for i,v in getconnections(game:GetService("Players").LocalPlayer.Idled) do
+        v:Disable()
+    end
+end
+
+antiAFK()
 
 for _,v in DD2:CollectViableAndUniqueScripts() do
     local scriptFileName = DD2.GetValidFileNameOrFallback(v.Name)
