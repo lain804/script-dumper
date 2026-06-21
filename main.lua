@@ -231,14 +231,12 @@ for _,v in DD2:CollectViableAndUniqueScripts() do
     local fullPath = ("%*/%*.lua"):format(path,scriptFileName)
     
     Logger.debug("decompiling", gameScriptPath)
-
-    local decompiled = decompile(v)
-
-    local scriptContent = decompiled
-
-    local fullContent = note .. (scriptContent or "")
-
-    writefile(fullPath,fullContent)
+    
+    task.spawn(function()
+        local decompiled = decompile(v)
+        local scriptContent = decompiled
+        local fullContent = note .. (scriptContent or "")
+        writefile(fullPath,fullContent)
+        Logger.debug("decompiled", gameScriptPath)
+    end)
 end
-
-Logger.info("finished decompiling")
