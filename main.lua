@@ -2,6 +2,19 @@ while not game:IsLoaded() do
     task.wait()
 end
 
+local decompilefunc = function(script_instance)
+    local bytecode = getscriptbytecode(script_instance)
+    local encoded = crypt.base64encode(bytecode)
+    local r = request(
+        {
+            Url = "http://localhost:3000/luau/decompile",
+            Method = "POST",
+            Body = encoded
+        }
+    )
+    return r.Body
+end
+
 local Logger = loadstring(game:HttpGet("https://raw.githubusercontent.com/lain804/rolog/refs/heads/master/rolog.lua"))()
 
 local DD2 = {}
@@ -14,6 +27,7 @@ function DD2:IsDecompilationViable(instance:BaseScript)
 end
 
 function DD2:CollectViableAndUniqueScripts()
+    
     function DD2.GenericCollect()
         local scripts = {}
         for _,v in game:GetDescendants() do
@@ -25,35 +39,52 @@ function DD2:CollectViableAndUniqueScripts()
     end
     
     local scriptCollectionFunctions = {
-        getscripts,
-        getmodules,
-        getrunningscripts,
-        getnilinstances,
-        DD2.GenericCollect
+        { name = "getscripts", collect = getscripts },
+        { name = "getmodules", collect = getmodules },
+        { name = "getrunningscripts", collect = getrunningscripts },
+        { name = "getnilinstances", collect = getnilinstances },
+        { name = "GenericCollect", collect = DD2.GenericCollect },
     }
 
     local bytecodeCache = {}
+    local bytecodeOwners = {}
 
     local scriptPool = {}
 
-    for _,f in scriptCollectionFunctions do
+    for _,entry in scriptCollectionFunctions do
+        local f = entry.collect
         if not f then
             continue
         end
 
-        for _,v in f() or {} do
+        local collected = f() or {}
 
-            if table.find(scriptPool,v) or not DD2:IsDecompilationViable(v) then
+        for _,v in collected do
+            if table.find(scriptPool,v) then
                 continue
             end
 
-            local bytecode = getscriptbytecode(v)
+            if not DD2:IsDecompilationViable(v) then
+                continue
+            end
+
+            local ok, bytecode = pcall(getscriptbytecode, v)
             
-            if not bytecode or table.find(bytecodeCache,bytecode) then
+            if not ok then
+                continue
+            end
+
+            if not bytecode then
+                continue
+            end
+
+            local duplicateOwner = bytecodeOwners[bytecode]
+            if duplicateOwner then
                 continue
             end
 
             table.insert(bytecodeCache,bytecode)
+            bytecodeOwners[bytecode] = v
             table.insert(scriptPool,v)
         end
     end
@@ -213,6 +244,48 @@ function DD2.GetDirectoryForScript(instance)
     end
 end
 
+function DD2.GetLocalPlayer()
+    local ok, localPlayer = pcall(function()
+        return game:GetService("Players").LocalPlayer
+    end)
+
+    if ok then
+        return localPlayer
+    end
+
+    return nil
+end
+
+function DD2.GetInstancePathSegments(instance)
+    local segments = {}
+    local current = instance
+    local localPlayer = DD2.GetLocalPlayer()
+
+    while current and current ~= game do
+        if localPlayer and current == localPlayer then
+            table.insert(segments, 1, "game.Players.LocalPlayer")
+
+            local parent = current.Parent
+            current = parent and parent.Parent or nil
+        else
+            table.insert(segments, 1, current.Name)
+            current = current.Parent
+        end
+    end
+
+    return segments
+end
+
+function DD2.GetSafeFullName(instance)
+    local ok, segments = pcall(DD2.GetInstancePathSegments, instance)
+
+    if ok and segments and #segments > 0 then
+        return table.concat(segments, ".")
+    end
+
+    return instance.Name or "Invalid Script Path"
+end
+
 local function antiAFK()
     for i,v in getconnections(game:GetService("Players").LocalPlayer.Idled) do
         v:Disable()
@@ -221,22 +294,41 @@ end
 
 antiAFK()
 
-for _,v in DD2:CollectViableAndUniqueScripts() do
+local scripts = DD2:CollectViableAndUniqueScripts()
+local scriptCount = #scripts
+
+local decompiledCount = 0
+
+task.spawn(function()
+    while task.wait(1) do
+        if decompiledCount == scriptCount then
+            Logger.debug("Decompilation Finished")
+            break
+        else
+            Logger.debug(`Decompiled {decompiledCount} out of {scriptCount} scripts`)
+        end
+    end
+end)
+
+for _,v in scripts do
     local scriptFileName = DD2.GetValidFileNameOrFallback(v.Name)
-    local gameScriptPath = v:GetFullName() or "Invalid Script Path"
+    local gameScriptPath = DD2.GetSafeFullName(v)
     local note = ("--[[ %* ]]--\n"):format(gameScriptPath)
 
     local path = DD2.GetDirectoryForScript(v)
 
     local fullPath = ("%*/%*.lua"):format(path,scriptFileName)
     
-    Logger.debug("decompiling", gameScriptPath)
+    --Logger.debug("Decompiling", gameScriptPath)
     
     task.spawn(function()
-        local decompiled = decompile(v)
+        local decompiled = decompilefunc(v)
         local scriptContent = decompiled
         local fullContent = note .. (scriptContent or "")
+
         writefile(fullPath,fullContent)
-        Logger.debug("decompiled", gameScriptPath)
+
+        --Logger.debug("Decompiled", gameScriptPath)
+        decompiledCount += 1
     end)
 end
